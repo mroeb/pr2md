@@ -8,6 +8,7 @@
 )]
 
 mod auth;
+mod clean;
 mod config;
 mod github;
 #[cfg(feature = "gui")]

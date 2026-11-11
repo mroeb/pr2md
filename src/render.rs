@@ -116,35 +116,20 @@ fn local_iso(iso: &str) -> String {
 
 // --------------------------------------------------------------------------- text helpers
 
-/// Remove HTML comments (PR templates, bot metadata).
-fn strip_html_comments(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    let mut rest = s;
-    while let Some(start) = rest.find("<!--") {
-        out.push_str(&rest[..start]);
-        match rest[start..].find("-->") {
-            Some(end) => rest = &rest[start + end + 3..],
-            None => {
-                rest = "";
-                break;
-            }
-        }
-    }
-    out.push_str(rest);
-    out
-}
-
 /// First meaningful line of a comment, shortened - for one-line to-do items.
 pub fn snippet(body: &str, max: usize) -> String {
-    let body = strip_html_comments(body);
+    let body = crate::clean::github_markdown(body, true);
     let mut in_code = false;
     let mut suggestion = false;
     let mut first_code: Option<String> = None;
     for line in body.lines() {
         let t = line.trim();
+        if t == "**Suggested change:**" {
+            suggestion = true;
+            continue;
+        }
         if t.starts_with("```") {
             in_code = !in_code;
-            suggestion |= t == "```suggestion";
             continue;
         }
         if in_code && first_code.is_none() && !t.is_empty() {
@@ -152,30 +137,53 @@ pub fn snippet(body: &str, max: usize) -> String {
         }
         if in_code
             || t.is_empty()
-            || t.starts_with('<')
             || t.starts_with('|')
             || t.starts_with("---")
             || t.starts_with('>')
         {
             continue;
         }
-        let t = t.trim_start_matches(['#', '*', '-', ' ']);
-        let t = t
-            .split_whitespace()
-            .collect::<Vec<_>>()
-            .join(" ")
-            .replace(['[', ']'], "");
+        let t = strip_links(
+            t.trim_start_matches(['#', '*', '-', ' '])
+                .trim_end_matches(['*', ' ']),
+        );
+        let t = t.split_whitespace().collect::<Vec<_>>().join(" ");
         if t.is_empty() {
             continue;
         }
         return shorten(&t, max);
     }
     match first_code {
-        Some(code) if suggestion => format!("💡 suggestion: `{}`", shorten(&code, max)),
+        Some(code) if suggestion => format!("suggestion: `{}`", shorten(&code, max)),
         Some(code) => format!("`{}`", shorten(&code, max)),
-        None if suggestion => "💡 suggestion: delete lines".into(),
+        None if suggestion => "suggestion: delete lines".into(),
         None => String::new(),
     }
+}
+
+/// `[text](url)` -> `text`, so one-line summaries don't contain half links.
+fn strip_links(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut rest = s;
+    while let Some(open) = rest.find('[') {
+        out.push_str(&rest[..open]);
+        let after = &rest[open + 1..];
+        match after
+            .find("](")
+            .and_then(|m| after[m..].find(')').map(|e| (m, m + e)))
+        {
+            Some((m, e)) => {
+                out.push_str(&after[..m]);
+                rest = &after[e + 1..];
+            }
+            None => {
+                out.push_str(&after.replace(['[', ']'], ""));
+                rest = "";
+            }
+        }
+    }
+    out.push_str(rest);
+    out.replace(['[', ']'], "")
 }
 
 fn shorten(t: &str, max: usize) -> String {
@@ -186,38 +194,8 @@ fn shorten(t: &str, max: usize) -> String {
     }
 }
 
-/// Make GitHub markdown sit nicely inside a note: demote headings so they don't fight ours.
-fn demote_headings(body: &str) -> String {
-    let body = strip_html_comments(body);
-    let mut in_code = false;
-    let mut out = vec![];
-    for line in body.lines() {
-        if line.trim_start().starts_with("```") {
-            in_code = !in_code;
-            if in_code && line.trim() == "```suggestion" {
-                out.push("💡 **Suggested change:**".to_string());
-                out.push("```".to_string());
-                continue;
-            }
-        }
-        if !in_code && line.starts_with('#') {
-            let level = line.chars().take_while(|c| *c == '#').count();
-            if level <= 6 && line[level..].starts_with(' ') {
-                out.push(format!(
-                    "{}{}",
-                    "#".repeat((level + 2).min(6)),
-                    &line[level..]
-                ));
-                continue;
-            }
-        }
-        out.push(line.to_string());
-    }
-    out.join("\n").trim().to_string()
-}
-
 fn quote(body: &str) -> String {
-    let body = demote_headings(body);
+    let body = crate::clean::github_markdown(body, true);
     if body.is_empty() {
         return String::new();
     }
@@ -244,15 +222,6 @@ fn mentions(body: &str, me: &str) -> bool {
 
 // --------------------------------------------------------------------------- badges
 
-pub fn state_icon(pr: &Pr) -> &'static str {
-    match pr.state.as_str() {
-        "draft" => "⚪",
-        "merged" => "🟣",
-        "closed" => "🔴",
-        _ => "🟢",
-    }
-}
-
 fn state_label(pr: &Pr) -> &'static str {
     match pr.state.as_str() {
         "draft" => "Draft",
@@ -264,26 +233,26 @@ fn state_label(pr: &Pr) -> &'static str {
 
 fn review_badge(pr: &Pr) -> &'static str {
     match pr.review_decision.as_deref() {
-        Some("APPROVED") => "✅ Approved",
-        Some("CHANGES_REQUESTED") => "🛠️ Changes requested",
-        Some("REVIEW_REQUIRED") => "⏳ Review required",
+        Some("APPROVED") => "Approved",
+        Some("CHANGES_REQUESTED") => "Changes requested",
+        Some("REVIEW_REQUIRED") => "Review required",
         _ => "—",
     }
 }
 
 fn checks_badge(pr: &Pr) -> &'static str {
     match pr.checks.as_deref() {
-        Some("SUCCESS") => "✔️ Passing",
-        Some("FAILURE" | "ERROR") => "❌ Failing",
-        Some("PENDING" | "EXPECTED") => "⏳ Running",
+        Some("SUCCESS") => "Passing",
+        Some("FAILURE" | "ERROR") => "Failing",
+        Some("PENDING" | "EXPECTED") => "Running",
         _ => "—",
     }
 }
 
 fn merge_badge(pr: &Pr) -> &'static str {
     match pr.mergeable.as_str() {
-        "CONFLICTING" => "⚔️ Conflicts",
-        "MERGEABLE" => "✅ Clean",
+        "CONFLICTING" => "Conflicts",
+        "MERGEABLE" => "Clean",
         _ => "—",
     }
 }
@@ -329,7 +298,7 @@ pub fn todos(pr: &Pr, me: &str) -> Vec<Todo> {
         out.push(Todo {
             id: format!("rq-{key_slug}"),
             text: format!(
-                "👀 **Review requested** from you · [Review on GitHub]({}/files)",
+                "**Review requested** from you · [Review on GitHub]({}/files)",
                 pr.url
             ),
             github_done: false,
@@ -356,7 +325,7 @@ pub fn todos(pr: &Pr, me: &str) -> Vec<Todo> {
         out.push(Todo {
             id: format!("r{}", r.id),
             text: format!(
-                "🛠️ **@{}** requested changes{} · [↗]({})",
+                "**@{}** requested changes{} · [link]({})",
                 r.author,
                 if text.is_empty() {
                     String::new()
@@ -382,7 +351,7 @@ pub fn todos(pr: &Pr, me: &str) -> Vec<Todo> {
             .any(|c| is_me(&c.author) || mentions(&c.body, me));
         let replies = t.comments.len() - 1;
         let mut text = format!(
-            "💬 **@{}** · `{}{}` — {}",
+            "**@{}** · `{}{}` — {}",
             first.author,
             t.path,
             t.line.map(|l| format!(":{l}")).unwrap_or_default(),
@@ -401,7 +370,7 @@ pub fn todos(pr: &Pr, me: &str) -> Vec<Todo> {
         if t.outdated {
             text.push_str(" · _outdated_");
         }
-        let _ = write!(text, " · [↗]({})", last.url);
+        let _ = write!(text, " · [link]({})", last.url);
         out.push(Todo {
             id: format!("t{}", Pr::thread_id(t)),
             text,
@@ -421,7 +390,7 @@ pub fn todos(pr: &Pr, me: &str) -> Vec<Todo> {
         out.push(Todo {
             id: format!("ci-{key_slug}"),
             text: format!(
-                "❌ **Checks failing**: {}",
+                "**Checks failing**: {}",
                 if names.is_empty() {
                     "see GitHub".into()
                 } else {
@@ -436,7 +405,7 @@ pub fn todos(pr: &Pr, me: &str) -> Vec<Todo> {
     if open && mine_pr && pr.mergeable == "CONFLICTING" {
         out.push(Todo {
             id: format!("mc-{key_slug}"),
-            text: format!("⚔️ **Merge conflicts** with `{}`", pr.base),
+            text: format!("**Merge conflicts** with `{}`", pr.base),
             github_done: false,
             mine: true,
             kind: TodoKind::Conflict,
@@ -460,7 +429,7 @@ pub fn todos(pr: &Pr, me: &str) -> Vec<Todo> {
         out.push(Todo {
             id: format!("m{}", c.id),
             text: format!(
-                "📣 **@{}** mentioned you: {} · [↗]({})",
+                "**@{}** mentioned you: {} · [link]({})",
                 c.author,
                 snippet(&c.body, 120),
                 c.url
@@ -572,10 +541,9 @@ pub fn pr_note(ctx: &Ctx, t: &Tracked, repo: Option<&Repo>) -> (String, Vec<Todo
     let _ = writeln!(o, "# {}\n", pr.title);
     let _ = writeln!(
         o,
-        "> [!abstract] [{}]({}) · {} {} · by {}",
+        "> [!abstract] [{}]({}) · {} · by {}",
         pr.key(),
         pr.url,
-        state_icon(pr),
         state_label(pr),
         user_link(cfg, &pr.author)
     );
@@ -641,7 +609,7 @@ pub fn pr_note(ctx: &Ctx, t: &Tracked, repo: Option<&Repo>) -> (String, Vec<Todo
     let repo_name = repo.map_or(pr.repo.as_str(), |r| r.name.as_str());
     let _ = writeln!(
         o,
-        "> 📦 {} · [Files]({u}/files) · [Commits]({u}/commits) · [Checks]({u}/checks) · {}\n",
+        "> {} · [Files]({u}/files) · [Commits]({u}/commits) · [Checks]({u}/checks) · {}\n",
         wikilink(&repo_file(cfg, &pr.repo), repo_name),
         wikilink(&dashboard_file(cfg), "Dashboard"),
         u = pr.url,
@@ -651,7 +619,7 @@ pub fn pr_note(ctx: &Ctx, t: &Tracked, repo: Option<&Repo>) -> (String, Vec<Todo
     }
 
     // To-dos
-    o.push_str("## ✅ To-do\n\n");
+    o.push_str("## To-do\n\n");
     if todos.is_empty() {
         o.push_str("_Nothing to do._\n");
     } else {
@@ -664,7 +632,7 @@ pub fn pr_note(ctx: &Ctx, t: &Tracked, repo: Option<&Repo>) -> (String, Vec<Todo
     o.push('\n');
 
     if !pr.failing_checks.is_empty() {
-        o.push_str("## ❌ Failing checks\n\n");
+        o.push_str("## Failing checks\n\n");
         for c in &pr.failing_checks {
             let _ = writeln!(o, "- [{}]({})", c.name, c.url);
         }
@@ -672,8 +640,8 @@ pub fn pr_note(ctx: &Ctx, t: &Tracked, repo: Option<&Repo>) -> (String, Vec<Todo
     }
 
     // Description
-    o.push_str("## 📝 Description\n\n");
-    let body = demote_headings(&pr.body);
+    o.push_str("## Description\n\n");
+    let body = crate::clean::github_markdown(&pr.body, false);
     o.push_str(if body.is_empty() {
         "_No description._"
     } else {
@@ -698,7 +666,7 @@ pub fn pr_note(ctx: &Ctx, t: &Tracked, repo: Option<&Repo>) -> (String, Vec<Todo
             .map(|r| (r.submitted_at.as_str(), Ev::R(r))),
     );
     events.sort_by(|a, b| a.0.cmp(b.0));
-    o.push_str("## 💬 Conversation\n\n");
+    o.push_str("## Conversation\n\n");
     if events.is_empty() {
         o.push_str("_No comments yet._\n\n");
     }
@@ -706,7 +674,7 @@ pub fn pr_note(ctx: &Ctx, t: &Tracked, repo: Option<&Repo>) -> (String, Vec<Todo
         let (kind, fold, title, body) = match ev {
             Ev::C(c) => {
                 let new = if is_new(t, &format!("c{}", c.id), ctx.now) {
-                    " 🆕"
+                    " *(new)*"
                 } else {
                     ""
                 };
@@ -715,7 +683,7 @@ pub fn pr_note(ctx: &Ctx, t: &Tracked, repo: Option<&Repo>) -> (String, Vec<Todo
                     "quote",
                     bot,
                     format!(
-                        "💬 **{}** · {} · [↗]({}){new}",
+                        "**{}** · {} · [link]({}){new}",
                         user_link(cfg, &c.author),
                         fmt_time(&c.created_at),
                         c.url
@@ -725,21 +693,21 @@ pub fn pr_note(ctx: &Ctx, t: &Tracked, repo: Option<&Repo>) -> (String, Vec<Todo
             }
             Ev::R(r) => {
                 let new = if is_new(t, &format!("r{}", r.id), ctx.now) {
-                    " 🆕"
+                    " *(new)*"
                 } else {
                     ""
                 };
                 let (kind, verb, fold) = match r.state.as_str() {
-                    "APPROVED" => ("success", "✅ approved", false),
-                    "CHANGES_REQUESTED" => ("failure", "🛠️ requested changes", false),
-                    "DISMISSED" => ("quote", "🚫 review dismissed", true),
-                    _ => ("note", "📝 reviewed", false),
+                    "APPROVED" => ("success", "approved", false),
+                    "CHANGES_REQUESTED" => ("failure", "requested changes", false),
+                    "DISMISSED" => ("quote", "review dismissed", true),
+                    _ => ("note", "reviewed", false),
                 };
                 (
                     kind,
                     fold,
                     format!(
-                        "**{}** {verb} · {} · [↗]({}){new}",
+                        "**{}** {verb} · {} · [link]({}){new}",
                         user_link(cfg, &r.author),
                         fmt_time(&r.submitted_at),
                         r.url
@@ -758,7 +726,7 @@ pub fn pr_note(ctx: &Ctx, t: &Tracked, repo: Option<&Repo>) -> (String, Vec<Todo
 
     // Review threads: open first
     if !pr.threads.is_empty() {
-        o.push_str("## 🧵 Review threads\n\n");
+        o.push_str("## Review threads\n\n");
         let mut threads: Vec<&Thread> = pr.threads.iter().collect();
         threads.sort_by_key(|t| t.resolved);
         for th in threads {
@@ -768,11 +736,11 @@ pub fn pr_note(ctx: &Ctx, t: &Tracked, repo: Option<&Repo>) -> (String, Vec<Todo
                 th.line.map(|l| format!(":{l}")).unwrap_or_default()
             );
             let (kind, fold, status) = if th.resolved {
-                ("success", "-", "✅ resolved")
+                ("success", "-", "resolved")
             } else if th.outdated {
-                ("question", "", "🔴 open · outdated")
+                ("question", "", "open · outdated")
             } else {
-                ("question", "", "🔴 open")
+                ("question", "", "open")
             };
             let _ = writeln!(
                 o,
@@ -789,13 +757,13 @@ pub fn pr_note(ctx: &Ctx, t: &Tracked, repo: Option<&Repo>) -> (String, Vec<Todo
             }
             for c in &th.comments {
                 let new = if is_new(t, &format!("t{}", c.id), ctx.now) {
-                    " 🆕"
+                    " *(new)*"
                 } else {
                     ""
                 };
                 let _ = writeln!(
                     o,
-                    ">\n> **{}** · {} · [↗]({}){new}",
+                    ">\n> **{}** · {} · [link]({}){new}",
                     user_link(cfg, &c.author),
                     fmt_time(&c.created_at),
                     c.url
@@ -838,7 +806,7 @@ pub fn repo_note(ctx: &Ctx, repo: &Repo, prs: &[&Tracked]) -> String {
             format!("repo/{}", slug(&repo.name))
         ])
     );
-    let _ = writeln!(o, "# 📦 {}\n", repo.name);
+    let _ = writeln!(o, "# {}\n", repo.name);
     let _ = writeln!(
         o,
         "> [!abstract] {}",
@@ -873,7 +841,7 @@ pub fn repo_note(ctx: &Ctx, repo: &Repo, prs: &[&Tracked]) -> String {
     if open.is_empty() {
         o.push_str("_None tracked._\n");
     } else {
-        o.push_str("| | PR | Author | Review | Checks | To-do | Updated |\n|---|---|---|---|---|---|---|\n");
+        o.push_str("| State | PR | Author | Review | Checks | To-do | Updated |\n|---|---|---|---|---|---|---|\n");
         for t in open {
             let todo = todos(&t.pr, ctx.me)
                 .iter()
@@ -882,7 +850,7 @@ pub fn repo_note(ctx: &Ctx, repo: &Repo, prs: &[&Tracked]) -> String {
             let _ = writeln!(
                 o,
                 "| {} | {} | @{} | {} | {} | {} | {} |",
-                state_icon(&t.pr),
+                state_label(&t.pr),
                 wikilink_cell(&t.file, &format!("#{} {}", t.pr.number, t.pr.title)),
                 t.pr.author,
                 review_badge(&t.pr),
@@ -897,12 +865,12 @@ pub fn repo_note(ctx: &Ctx, repo: &Repo, prs: &[&Tracked]) -> String {
         }
     }
     if !closed.is_empty() {
-        o.push_str("\n## Recently closed\n\n| | PR | Author | Closed |\n|---|---|---|---|\n");
+        o.push_str("\n## Recently closed\n\n| State | PR | Author | Closed |\n|---|---|---|---|\n");
         for t in closed {
             let _ = writeln!(
                 o,
                 "| {} | {} | @{} | {} |",
-                state_icon(&t.pr),
+                state_label(&t.pr),
                 wikilink_cell(&t.file, &format!("#{} {}", t.pr.number, t.pr.title)),
                 t.pr.author,
                 t.pr.closed_at.as_deref().map(fmt_date).unwrap_or_default()
@@ -914,18 +882,18 @@ pub fn repo_note(ctx: &Ctx, repo: &Repo, prs: &[&Tracked]) -> String {
 
 fn repo_meta(repo: &Repo) -> String {
     let mut m = vec![if repo.private {
-        "🔒 Private".to_string()
+        "Private".to_string()
     } else {
-        "🌐 Public".to_string()
+        "Public".to_string()
     }];
     if repo.archived {
-        m.push("🗄️ Archived".into());
+        m.push("Archived".into());
     }
     if let Some(l) = &repo.language {
         m.push(l.clone());
     }
-    m.push(format!("⭐ {}", repo.stars));
-    m.push(format!("🍴 {}", repo.forks));
+    m.push(format!("{} stars", repo.stars));
+    m.push(format!("{} forks", repo.forks));
     if !repo.default_branch.is_empty() {
         m.push(format!("`{}`", repo.default_branch));
     }
@@ -966,7 +934,7 @@ pub fn dashboard(ctx: &Ctx, state: &State) -> (String, Vec<Todo>, usize) {
         "---\ntype: pr2md-dashboard\ntodo: {todo_total}\nopen_prs: {}\ntags: [\"pr2md\"]\n---\n",
         open.len()
     );
-    o.push_str("# 🔀 Pull Requests\n\n");
+    o.push_str("# Pull Requests\n\n");
     let _ = writeln!(
         o,
         "> [!info] Synced **{}** as {}\n> **{}** open PRs in **{}** repos · **{}** to-dos · {}\n",
@@ -990,32 +958,32 @@ pub fn dashboard(ctx: &Ctx, state: &State) -> (String, Vec<Todo>, usize) {
             std::cmp::Reverse(t.pr.updated_at.clone()),
         )
     });
-    o.push_str("## 🎯 Needs your attention\n\n");
+    o.push_str("## Needs your attention\n\n");
     if attention.is_empty() {
-        o.push_str("_Nothing waiting for you_ 🎉\n");
+        o.push_str("_Nothing waiting for you_ \n");
     }
     for (t, x) in &attention {
         let count = |k: TodoKind| x.iter().filter(|x| x.kind == k).count();
         let mut why = vec![];
         if count(TodoKind::ReviewRequest) > 0 {
-            why.push("👀 review requested".to_string());
+            why.push("review requested".to_string());
         }
         if count(TodoKind::ChangesRequested) > 0 {
-            why.push("🛠️ changes requested".into());
+            why.push("changes requested".into());
         }
         match count(TodoKind::Thread) {
             0 => {}
-            1 => why.push("💬 1 open thread".into()),
-            n => why.push(format!("💬 {n} open threads")),
+            1 => why.push("1 open thread".into()),
+            n => why.push(format!("{n} open threads")),
         }
         if count(TodoKind::Checks) > 0 {
-            why.push("❌ checks failing".into());
+            why.push("checks failing".into());
         }
         if count(TodoKind::Conflict) > 0 {
-            why.push("⚔️ conflicts".into());
+            why.push("conflicts".into());
         }
         if count(TodoKind::Mention) > 0 {
-            why.push("📣 mentioned".into());
+            why.push("mentioned".into());
         }
         let _ = writeln!(
             o,
@@ -1036,7 +1004,7 @@ pub fn dashboard(ctx: &Ctx, state: &State) -> (String, Vec<Todo>, usize) {
         .take(15)
         .collect();
     if !recent.is_empty() {
-        o.push_str("## 🔔 Last 24 hours\n\n");
+        o.push_str("## Last 24 hours\n\n");
         for a in recent {
             let link = state
                 .prs
@@ -1054,10 +1022,7 @@ pub fn dashboard(ctx: &Ctx, state: &State) -> (String, Vec<Todo>, usize) {
     // Repos -> PRs -> to-dos
     for repo in &repos {
         let meta = state.repos.get(*repo);
-        o.push_str(&format!(
-            "## 📦 {}\n\n",
-            wikilink(&repo_file(cfg, repo), repo)
-        ));
+        o.push_str(&format!("## {}\n\n", wikilink(&repo_file(cfg, repo), repo)));
         if let Some(r) = meta {
             let _ = writeln!(o, "{} · [GitHub]({})\n", repo_meta(r), r.url);
         }
@@ -1081,24 +1046,29 @@ pub fn dashboard(ctx: &Ctx, state: &State) -> (String, Vec<Todo>, usize) {
             };
             let _ = writeln!(
                 o,
-                "### {} {}\n",
-                state_icon(pr),
+                "### {}\n",
                 wikilink(&t.file, &format!("#{} {}", pr.number, pr.title))
             );
             let comments =
                 pr.comments.len() + pr.threads.iter().map(|t| t.comments.len()).sum::<usize>();
-            let _ = writeln!(
-                o,
-                "by @{}{role} · `{}` → `{}` · {} · {} · 💬 {} · updated {} · [↗ GitHub]({})\n",
-                pr.author,
-                pr.head,
-                pr.base,
-                review_badge(pr),
-                checks_badge(pr),
-                comments,
-                fmt_time(&pr.updated_at),
-                pr.url
-            );
+            let mut meta = vec![
+                state_label(pr).to_string(),
+                format!("by @{}{role}", pr.author),
+                format!("`{}` → `{}`", pr.head, pr.base),
+            ];
+            if pr.review_decision.is_some() {
+                meta.push(review_badge(pr).to_string());
+            }
+            if pr.checks.is_some() {
+                meta.push(format!("checks {}", checks_badge(pr).to_lowercase()));
+            }
+            meta.push(format!(
+                "{comments} comment{}",
+                if comments == 1 { "" } else { "s" }
+            ));
+            meta.push(format!("updated {}", fmt_time(&pr.updated_at)));
+            meta.push(format!("[GitHub]({})", pr.url));
+            let _ = writeln!(o, "{}\n", meta.join(" · "));
             let x = my_todos(t);
             let mut wrote = !x.is_empty();
             const MAX_PER_PR: usize = 12;
@@ -1122,7 +1092,7 @@ pub fn dashboard(ctx: &Ctx, state: &State) -> (String, Vec<Todo>, usize) {
                 }
                 let _ = writeln!(
                     o,
-                    "- 🆕 **@{}**: {} · [↗]({})",
+                    "- New: **@{}**: {} · [link]({})",
                     c.author,
                     snippet(&c.body, 120),
                     c.url
@@ -1141,13 +1111,13 @@ pub fn dashboard(ctx: &Ctx, state: &State) -> (String, Vec<Todo>, usize) {
     closed.sort_by(|a, b| b.pr.closed_at.cmp(&a.pr.closed_at));
     if !closed.is_empty() {
         o.push_str(
-            "## 🗄️ Recently closed\n\n| | PR | Repo | Author | Closed |\n|---|---|---|---|---|\n",
+            "## Recently closed\n\n| State | PR | Repo | Author | Closed |\n|---|---|---|---|---|\n",
         );
         for t in closed {
             let _ = writeln!(
                 o,
                 "| {} | {} | {} | @{} | {} |",
-                state_icon(&t.pr),
+                state_label(&t.pr),
                 wikilink_cell(&t.file, &format!("#{} {}", t.pr.number, t.pr.title)),
                 t.pr.repo,
                 t.pr.author,
@@ -1163,8 +1133,7 @@ pub fn dashboard(ctx: &Ctx, state: &State) -> (String, Vec<Todo>, usize) {
 // --------------------------------------------------------------------------- activity log
 
 pub fn activity(ctx: &Ctx, state: &State) -> String {
-    let mut o =
-        String::from("---\ntype: pr2md-activity\ntags: [\"pr2md\"]\n---\n\n# 🔔 Activity\n");
+    let mut o = String::from("---\ntype: pr2md-activity\ntags: [\"pr2md\"]\n---\n\n# Activity\n");
     let mut day = String::new();
     for a in &state.activity {
         let Some(t) = parse_ts(&a.time) else { continue };
@@ -1229,15 +1198,7 @@ mod tests {
 ```",
                 50
             ),
-            "💡 suggestion: `if (x)`"
-        );
-    }
-
-    #[test]
-    fn headings_demoted() {
-        assert_eq!(
-            demote_headings("# A\n```\n# not\n```\n#tag"),
-            "### A\n```\n# not\n```\n#tag"
+            "suggestion: `if (x)`"
         );
     }
 

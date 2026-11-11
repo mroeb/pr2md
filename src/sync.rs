@@ -285,9 +285,9 @@ fn diff(prev: Option<&Tracked>, pr: &Pr, me: &str, cfg: &Config, first_run: bool
     let is_me = |l: &str| l.eq_ignore_ascii_case(me);
     let requested_me = |p: &Pr| p.requested.iter().any(|r| is_me(r));
     let Some(prev) = prev else {
-        let mut v = vec![format!("🆕 now tracking: {}", pr.title)];
+        let mut v = vec![format!("now tracking: {}", pr.title)];
         if requested_me(pr) {
-            v.push("👀 your review was requested".into());
+            v.push("your review was requested".into());
         }
         return v;
     };
@@ -306,8 +306,8 @@ fn diff(prev: Option<&Tracked>, pr: &Pr, me: &str, cfg: &Config, first_run: bool
             .and_then(|n| pr.reviews.iter().find(|r| r.id.to_string() == n))
         {
             match r.state.as_str() {
-                "APPROVED" => out.push(format!("✅ approved by @{author}")),
-                "CHANGES_REQUESTED" => out.push(format!("🛠️ changes requested by @{author}")),
+                "APPROVED" => out.push(format!("approved by @{author}")),
+                "CHANGES_REQUESTED" => out.push(format!("changes requested by @{author}")),
                 "COMMENTED" if !r.body.is_empty() => {}
                 _ => continue,
             }
@@ -323,7 +323,7 @@ fn diff(prev: Option<&Tracked>, pr: &Pr, me: &str, cfg: &Config, first_run: bool
     if n_comments > 0 {
         let who: Vec<String> = commenters.iter().map(|c| format!("@{c}")).collect();
         out.push(format!(
-            "💬 {n_comments} new comment{} by {}",
+            "{n_comments} new comment{} by {}",
             if n_comments == 1 { "" } else { "s" },
             who.join(", ")
         ));
@@ -331,29 +331,29 @@ fn diff(prev: Option<&Tracked>, pr: &Pr, me: &str, cfg: &Config, first_run: bool
 
     if old.state != pr.state {
         out.push(match (old.state.as_str(), pr.state.as_str()) {
-            (_, "merged") => "🟣 merged".into(),
-            (_, "closed") => "🔴 closed".into(),
-            ("draft", "open") => "🟢 ready for review".into(),
-            (_, "draft") => "⚪ converted to draft".into(),
-            _ => "🟢 reopened".into(),
+            (_, "merged") => "merged".into(),
+            (_, "closed") => "closed".into(),
+            ("draft", "open") => "ready for review".into(),
+            (_, "draft") => "converted to draft".into(),
+            _ => "reopened".into(),
         });
     }
     if requested_me(pr) && !requested_me(old) {
-        out.push("👀 your review was requested".into());
+        out.push("your review was requested".into());
     }
     if is_me(&pr.author) && pr.is_open() {
         let failing = |p: &Pr| matches!(p.checks.as_deref(), Some("FAILURE" | "ERROR"));
         if failing(pr) && !failing(old) {
-            out.push("❌ checks failing".into());
+            out.push("checks failing".into());
         } else if !failing(pr) && failing(old) && pr.checks.as_deref() == Some("SUCCESS") {
-            out.push("✔️ checks passing again".into());
+            out.push("checks passing again".into());
         }
         if pr.mergeable == "CONFLICTING" && old.mergeable != "CONFLICTING" {
-            out.push("⚔️ merge conflicts".into());
+            out.push("merge conflicts".into());
         }
     }
     if old.title != pr.title && !old.title.is_empty() {
-        out.push(format!("✏️ renamed to \"{}\"", pr.title));
+        out.push(format!("renamed to \"{}\"", pr.title));
     }
     out
 }

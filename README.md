@@ -19,13 +19,13 @@ sign-in built in.
 ```
 
 **Dashboard** (`Dashboard.md`)
-- **🎯 Needs your attention**: one line per PR that's waiting on you (review requested,
+- **Needs your attention**: one line per PR that's waiting on you (review requested,
   changes requested, open threads, failing checks, conflicts, mentions)
-- **🔔 Last 24 hours**: new comments, reviews, merges, and so on
-- **📦 One section per repository** with its metadata, then one heading per open PR
+- **Last 24 hours**: new comments, reviews, merges, and so on
+- **One section per repository** with its metadata, then one heading per open PR
   (state, review, checks, branch, comment count) followed by **checkboxes for the
   things you need to do**
-- **🗄️ Recently closed** PRs
+- **Recently closed** PRs
 
 **PR note**
 - **Properties** (front matter): repo, state, author, review decision, checks, labels,
@@ -33,21 +33,23 @@ sign-in built in.
   Dataview and Bases.
 - **Header callout**: links to the PR, files, commits, checks, the repo note and
   the dashboard
-- **✅ To-do**: every review thread and "changes requested" review as a checkbox.
+- **To-do**: every review thread and "changes requested" review as a checkbox.
   A box is ticked automatically when the thread is resolved on GitHub.
-- **Description**, then the **conversation** as callouts (✅ approved, 🛠️ changes
-  requested, 💬 comments). Bot comments are folded, and new items are marked 🆕.
+- **Description**, then the **conversation** as callouts (approved, changes
+  requested, comments). Bot comments are folded, and new items are marked *(new)*.
+- HTML in bot comments (CodeScene, Copilot, ...) is converted to plain Markdown, so it
+  renders properly inside Obsidian callouts.
 - **Review threads** with the diff hunk and every reply. Resolved threads are folded.
 
 ### What counts as "your" to-do
 
-| | When |
+| To-do | When |
 |---|---|
-| 👀 Review requested | Your review is requested on the PR |
-| 🛠️ Changes requested | On your PR, until that reviewer submits a newer review |
-| 💬 Review thread | Unresolved, the last reply isn't yours, and it's your PR or you're in the thread or mentioned |
-| ❌ Checks failing / ⚔️ Merge conflicts | On your open PRs |
-| 📣 Mention | Someone @-mentioned you and you haven't replied since |
+| Review requested | Your review is requested on the PR |
+| Changes requested | On your PR, until that reviewer submits a newer review |
+| Review thread | Unresolved, the last reply isn't yours, and it's your PR or you're in the thread or mentioned |
+| Checks failing / Merge conflicts | On your open PRs |
+| Mention | Someone @-mentioned you and you haven't replied since |
 
 ### Ticking checkboxes in Obsidian
 
