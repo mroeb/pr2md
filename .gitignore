@@ -4,3 +4,4 @@ state.json
 token
 token.bin
 *.pr2md-tmp
+dist/

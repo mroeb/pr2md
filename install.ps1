@@ -66,7 +66,7 @@ if (-not $Source) {
         }
         Write-Host 'Building pr2md (cargo build --release)...'
         Push-Location $here
-        try { cargo build --release; if ($LASTEXITCODE) { throw 'cargo build failed' } }
+        try { $ErrorActionPreference = 'Continue'; cargo build --release; if ($LASTEXITCODE) { throw 'cargo build failed' } }
         finally { Pop-Location }
         $Source = $candidates[0]
     }

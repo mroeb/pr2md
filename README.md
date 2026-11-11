@@ -209,3 +209,20 @@ SORT updated DESC
 `eframe` (settings window), and `windows-sys` on Windows. Notifications, autostart,
 the folder picker and opening links all use built-in OS tools, so they need no
 extra crates. The icon is drawn in code.
+
+## Making a release
+
+```powershell
+.\build-release.ps1                     # Windows -> dist\pr2md-<version>-windows-x64.zip
+.\build-release.ps1 -ClientId Ov23li…   # also bake in the OAuth app for "Sign in with GitHub"
+```
+
+```sh
+./build-release.sh                      # Linux/macOS -> dist/pr2md-<version>-<os>-<arch>.tar.gz
+PR2MD_CLIENT_ID=Ov23li… ./build-release.sh
+```
+
+Each script runs the tests, builds the release binary and packs it together with the
+installer, `README.md` and `RELEASE_NOTES.md`. Quit any pr2md running from
+`target/release` before you build, because Windows locks the running file. Build on
+each OS you want to ship for.
