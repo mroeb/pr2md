@@ -63,13 +63,28 @@ so `[[owner/repo#123]]` works as a link.
 
 ## Install
 
-Build it on the OS you want to run it on (Rust 1.89+):
+The install scripts don't need admin or root rights. Each one builds pr2md if needed
+(Rust 1.89+), copies it to a per-user folder, turns on start at login, and starts the
+tray app:
 
-```sh
-cargo build --release          # target/release/pr2md(.exe)
-```
+| OS | Command | Installs to |
+|---|---|---|
+| Windows | double-click `install.cmd` (or `.\install.ps1`) | `%LOCALAPPDATA%\Programs\pr2md\pr2md.exe` |
+| Linux / macOS | `./install.sh` | `~/.local/bin/pr2md` |
 
-The result is a single self-contained binary. Copy it anywhere and run it.
+To update, run the script again. If the binary changed, the script stops the running
+pr2md, replaces the file and starts it again. If nothing changed, it leaves the
+installed file alone. Your config, state and login aren't touched either way.
+
+| | Windows | Linux / macOS |
+|---|---|---|
+| Rebuild before installing | `-Build` | `--build` |
+| Install a specific binary | `-Source path\to\pr2md.exe` | `--source path` |
+| Don't start the tray app | `-NoStart` | `--no-start` |
+| Uninstall | `-Uninstall` | `--uninstall` |
+
+You can also build it yourself with `cargo build --release`. The result is a single
+self-contained binary that runs from anywhere.
 
 Start `pr2md`. The settings window opens the first time:
 
